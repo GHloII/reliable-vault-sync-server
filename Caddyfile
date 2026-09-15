@@ -1,0 +1,10 @@
+{$SYNC_DOMAIN} {
+	encode zstd gzip
+
+	header {
+		-Server
+	}
+
+	reverse_proxy vault-sync:8787
+}
+

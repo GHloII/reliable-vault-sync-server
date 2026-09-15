@@ -1,0 +1,70 @@
+name: reliable-vault-sync
+
+services:
+  vault-sync:
+    build:
+      context: .
+    restart: unless-stopped
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "8787"
+      DATA_DIR: "/data"
+      SYNC_TOKEN: "${SYNC_TOKEN:?Set SYNC_TOKEN in .env}"
+    expose:
+      - "8787"
+    volumes:
+      - vault_sync_data:/data
+      - vault_sync_tmp:/tmp
+    networks:
+      - sync_internal
+    read_only: true
+    init: true
+    mem_limit: 512m
+    cpus: "1.0"
+    pids_limit: 256
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8787/health | grep -q '\"status\":\"ok\"'"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      SYNC_DOMAIN: "${SYNC_DOMAIN:?Set SYNC_DOMAIN in .env}"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - sync_internal
+    depends_on:
+      vault-sync:
+        condition: service_healthy
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+
+networks:
+  sync_internal:
+
+volumes:
+  vault_sync_data:
+    name: reliable-vault-sync-data
+  vault_sync_tmp:
+  caddy_data:
+  caddy_config:
+
