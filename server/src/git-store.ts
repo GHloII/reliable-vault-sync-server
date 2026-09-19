@@ -13,6 +13,7 @@ import type {
 } from "../../shared/src/protocol";
 import { INCREMENTAL_PROTOCOL_VERSION, PROTOCOL_VERSION } from "../../shared/src/protocol";
 import { isTransientSyncPath } from "../../shared/src/path-mapper";
+import { mergeIndependentTextChanges } from "../../shared/src/three-way-merge";
 import { gitIdentityEnv, runGit } from "./git";
 import { KeyedLock } from "./lock";
 
@@ -316,6 +317,7 @@ export class GitVaultStore {
         throw new Error(`Git merge failed without conflicts: ${result.stderr.toString("utf8").trim()}`);
       }
       const conflicts: MergeConflict[] = [];
+      const automaticallyMerged: Array<{ path: string; content: Buffer }> = [];
       for (const path of paths) {
         const base = await this.readStage(directory, 1, path);
         const remote = await this.readStage(directory, 2, path);
@@ -325,6 +327,16 @@ export class GitVaultStore {
           : isBinary(base) || isBinary(local) || isBinary(remote)
             ? "binary"
             : "text";
+        if (kind === "text") {
+          const merged = mergeIndependentTextChanges(
+            base!.toString("utf8"),
+            local!.toString("utf8"),
+            remote!.toString("utf8")
+          );
+          if (merged !== null) {
+            automaticallyMerged.push({ path, content: Buffer.from(merged, "utf8") });
+          }
+        }
         conflicts.push({
           path,
           kind,
@@ -332,6 +344,17 @@ export class GitVaultStore {
           localBase64: local?.toString("base64") ?? null,
           remoteBase64: remote?.toString("base64") ?? null
         });
+      }
+      if (automaticallyMerged.length === conflicts.length) {
+        for (const merged of automaticallyMerged) {
+          const path = worktreePath(directory, merged.path);
+          await mkdir(dirname(path), { recursive: true });
+          await writeFile(path, merged.content);
+        }
+        await runGit(["add", "-A"], { cwd: directory });
+        await runGit(["commit", "--no-edit"], { cwd: directory, env: gitIdentityEnv(deviceId) });
+        const revision = (await runGit(["rev-parse", "HEAD"], { cwd: directory })).stdout.toString("utf8").trim();
+        return { status: "ok", revision };
       }
       await runGit(["merge", "--abort"], { cwd: directory, allowFailure: true });
       return { status: "conflict", conflicts };

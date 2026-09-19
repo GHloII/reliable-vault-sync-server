@@ -2,6 +2,8 @@
 
 Self-hosted synchronization server for the [Reliable Vault Sync Obsidian plugin](https://github.com/GHloII/reliable-vault-sync). It stores every accepted vault revision in a Git repository and performs server-side three-way merges.
 
+Version 0.1.3 adds a finer line-level merge fallback for independent adjacent edits, such as completing one Markdown task while another device appends a new task.
+
 > [!WARNING]
 > This is an early release. Keep independent backups. Vault contents are stored unencrypted on the server. End-to-end encryption is not implemented yet.
 
